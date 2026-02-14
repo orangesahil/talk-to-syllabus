@@ -6,15 +6,18 @@ import time
 st.set_page_config(page_title="Talk to Your Syllabus AI", page_icon="📘")
 st.title("Talk to Your Syllabus AI")
 
-# Primary + fallback models (free tier friendly on Hugging Face)
-primary = InferenceClient(
-    model="HuggingFaceH4/zephyr-7b-beta",
-    token=st.secrets["HF_TOKEN"]
-)
+# Load HuggingFace token safely
+HF_TOKEN = st.secrets.get("HF_TOKEN")
 
-backup = InferenceClient(
-    model="google/flan-t5-large",
-    token=st.secrets["HF_TOKEN"]
+if not HF_TOKEN:
+    st.error("HF_TOKEN is missing. Please add it in Streamlit Secrets.")
+    st.stop()
+
+# Use a lighter, faster model (more reliable on free tier)
+client = InferenceClient(
+    model="google/flan-t5-base",
+    token=HF_TOKEN,
+    timeout=60
 )
 
 uploaded_file = st.file_uploader("Upload your syllabus PDF", type="pdf")
@@ -32,22 +35,22 @@ if uploaded_file:
 
 question = st.text_input("Ask question from syllabus")
 
-def generate_answer(prompt):
-    # Try primary model
-    try:
-        return primary.text_generation(prompt, max_new_tokens=200, temperature=0.3)
-    except Exception:
-        # Small wait then retry primary once
-        time.sleep(5)
+def ask_ai(prompt):
+    for attempt in range(3):
         try:
-            return primary.text_generation(prompt, max_new_tokens=200, temperature=0.3)
+            return client.text_generation(
+                prompt,
+                max_new_tokens=200,
+                temperature=0.2,
+            )
         except Exception:
-            # Fallback to backup model
-            return backup.text_generation(prompt, max_new_tokens=200, temperature=0.3)
+            if attempt == 2:
+                raise
+            time.sleep(5)
 
 if question and text:
     prompt = f"""
-You are a helpful teaching assistant. Answer the question based ONLY on the syllabus text below.
+Answer strictly from the syllabus content below.
 
 Syllabus:
 {text[:1500]}
@@ -55,12 +58,13 @@ Syllabus:
 Question:
 {question}
 
-Answer clearly and concisely:
+Give a short, clear answer:
 """
 
     with st.spinner("Thinking..."):
         try:
-            response = generate_answer(prompt)
+            response = ask_ai(prompt)
+            st.success("Answer:")
             st.write(response)
         except Exception:
-            st.error("AI is under heavy load right now. Please try again in a moment.")
+            st.error("AI servers are overloaded. Try again in 30–60 seconds.")
