@@ -6,24 +6,20 @@ import time
 st.set_page_config(page_title="Talk to Your Syllabus AI", page_icon="📘")
 st.title("Talk to Your Syllabus AI")
 
-# Load HuggingFace token safely
-HF_TOKEN = st.secrets.get("HF_TOKEN")
+HF_TOKEN = st.secrets["HF_TOKEN"]
 
-if not HF_TOKEN:
-    st.error("HF_TOKEN is missing. Please add it in Streamlit Secrets.")
-    st.stop()
+# Fallback models (tries next if one is busy)
+MODELS = [
+    "HuggingFaceH4/zephyr-7b-beta",
+    "mistralai/Mistral-7B-Instruct-v0.1",
+]
 
-# Use a lighter, faster model (more reliable on free tier)
-client = InferenceClient(
-    model="google/flan-t5-base",
-    token=HF_TOKEN,
-    timeout=60
-)
+def get_client(model):
+    return InferenceClient(model=model, token=HF_TOKEN)
 
 uploaded_file = st.file_uploader("Upload your syllabus PDF", type="pdf")
 
 text = ""
-
 if uploaded_file:
     reader = PdfReader(uploaded_file)
     for page in reader.pages:
@@ -36,35 +32,39 @@ if uploaded_file:
 question = st.text_input("Ask question from syllabus")
 
 def ask_ai(prompt):
-    for attempt in range(3):
+    last_error = None
+
+    for model in MODELS:
         try:
+            client = get_client(model)
             return client.text_generation(
                 prompt,
                 max_new_tokens=200,
-                temperature=0.2,
+                temperature=0.3,
             )
-        except Exception:
-            if attempt == 2:
-                raise
-            time.sleep(5)
+        except Exception as e:
+            last_error = e
+            time.sleep(1)
+
+    raise last_error
 
 if question and text:
     prompt = f"""
-Answer strictly from the syllabus content below.
+You are a helpful teaching assistant. Answer the question based ONLY on the syllabus text below.
 
 Syllabus:
-{text[:1500]}
+{text[:1800]}
 
 Question:
 {question}
 
-Give a short, clear answer:
+Answer clearly and concisely:
 """
 
     with st.spinner("Thinking..."):
         try:
             response = ask_ai(prompt)
-            st.success("Answer:")
             st.write(response)
         except Exception:
-            st.error("AI servers are overloaded. Try again in 30–60 seconds.")
+            st.error("🚨 AI servers are busy right now. Please try again in 30–60 seconds.")
+
