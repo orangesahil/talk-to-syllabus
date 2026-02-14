@@ -4,9 +4,14 @@ from huggingface_hub import InferenceClient
 
 st.title("Talk to Your Syllabus AI")
 
+import streamlit as st
+from huggingface_hub import InferenceClient
+
 client = InferenceClient(
     model="mistralai/Mistral-7B-Instruct-v0.1",
+    token=st.secrets["HF_TOKEN"]
 )
+
 
 uploaded_file = st.file_uploader("Upload your syllabus PDF", type="pdf")
 
@@ -39,3 +44,4 @@ if question and text:
     )
 
     st.write(response)
+
